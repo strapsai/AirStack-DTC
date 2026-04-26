@@ -1,0 +1,9 @@
+{
+  "z_min_m": 73.71,
+  "z_max_m": 92.635,
+  "z_range_m": 18.925,
+  "world_width_m": 345.75,
+  "world_height_m": 402.5,
+  "image_size_px": 2049,
+  "gazebo_size_tag": "<size>345.8 402.5 18.9</size>"
+}

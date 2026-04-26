@@ -1,0 +1,154 @@
+{
+  "source": {
+    "map_products_dir": "/isaac-sim/AirStack/simulation/isaac-sim/assets/teex/map_products",
+    "dem": "dem_merged.tif",
+    "surface": "surface_merged.tif",
+    "rgb": "site_rgb.tif"
+  },
+  "crs": {
+    "epsg": 32614,
+    "wkt": "PROJCS[\"WGS 84 / UTM zone 14N\",GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563,AUTHORITY[\"EPSG\",\"7030\"]],AUTHORITY[\"EPSG\",\"6326\"]],PRIMEM[\"Greenwich\",0,AUTHORITY[\"EPSG\",\"8901\"]],UNIT[\"degree\",0.0174532925199433,AUTHORITY[\"EPSG\",\"9122\"]],AUTHORITY[\"EPSG\",\"4326\"]],PROJECTION[\"Transverse_Mercator\"],PARAMETER[\"latitude_of_origin\",0],PARAMETER[\"central_meridian\",-99],PARAMETER[\"scale_factor\",0.9996],PARAMETER[\"false_easting\",500000],PARAMETER[\"false_northing\",0],UNIT[\"metre\",1,AUTHORITY[\"EPSG\",\"9001\"]],AXIS[\"Easting\",EAST],AXIS[\"Northing\",NORTH],AUTHORITY[\"EPSG\",\"32614\"]]"
+  },
+  "origin": {
+    "easting": 753809.19,
+    "northing": 3385305.55,
+    "z_origin": 95.0,
+    "frame_id": "map"
+  },
+  "bounds_projected_m": [
+    753809.1899989209,
+    3385305.5500966185,
+    754154.9399989209,
+    3385708.0500966185
+  ],
+  "bounds_local_m": [
+    -1.0790536180138588e-06,
+    9.66186635196209e-05,
+    345.7499989209464,
+    402.5000966186635
+  ],
+  "resolution_m": [
+    0.25,
+    0.25
+  ],
+  "raster_shape": {
+    "width_px": 1383,
+    "height_px": 1610
+  },
+  "heightmap_meta": {
+    "z_min_m": 73.71,
+    "z_max_m": 92.635,
+    "z_range_m": 18.925,
+    "world_width_m": 345.75,
+    "world_height_m": 402.5,
+    "image_size_px": 2049,
+    "gazebo_size_tag": "<size>345.8 402.5 18.9</size>"
+  },
+  "map_quality_report_summary": {
+    "warnings": [
+      "Nodata fraction is high (45.1%); verify LiDAR coverage and crop bounds."
+    ],
+    "dem": {
+      "path": "/home/ubuntu/dtc/airlab_ws/autonomy_ws/src/planner/dtc_multi_agent_planning/data/maps/dem_merged.tif",
+      "crs": "EPSG:32614",
+      "resolution_m": [
+        0.25,
+        0.25
+      ],
+      "width_px": 1383,
+      "height_px": 1610,
+      "world_width_m": 345.75,
+      "world_height_m": 402.5,
+      "bounds_projected_m": [
+        753809.19,
+        3385305.55,
+        754154.94,
+        3385708.05
+      ],
+      "bounds_wgs84": [
+        -96.35353534,
+        30.57330175,
+        -96.34983473,
+        30.57700327
+      ],
+      "nodata_fraction": 0.450585,
+      "elevation_min_m": 73.71,
+      "elevation_max_m": 92.635,
+      "elevation_range_m": 18.925
+    },
+    "imagery": {
+      "path": "/home/ubuntu/dtc/airlab_ws/autonomy_ws/src/planner/dtc_multi_agent_planning/data/maps/site_rgb.tif",
+      "aligned_to_reference_dem": true,
+      "crs": "EPSG:32614",
+      "width_px": 1383,
+      "height_px": 1610,
+      "band_count": 3,
+      "resolution_m": [
+        0.25,
+        0.25
+      ],
+      "bounds_projected_m": [
+        753809.19,
+        3385305.55,
+        754154.94,
+        3385708.05
+      ],
+      "bounds_wgs84": [
+        -96.35353534,
+        30.57330175,
+        -96.34983473,
+        30.57700327
+      ],
+      "dem_overlap_fraction": 1.0,
+      "warnings": [],
+      "alignment": {
+        "reference_raster_path": "/home/ubuntu/dtc/airlab_ws/autonomy_ws/src/planner/dtc_multi_agent_planning/data/maps/dem_merged.tif",
+        "reference_crs": "EPSG:32614",
+        "reference_width_px": 1383,
+        "reference_height_px": 1610,
+        "reference_resolution_m": [
+          0.25,
+          0.25
+        ],
+        "reference_bounds_projected_m": [
+          753809.19,
+          3385305.55,
+          754154.94,
+          3385708.05
+        ]
+      }
+    },
+    "occupancy": {
+      "slope_threshold_deg": 15.0,
+      "obstacle_height_threshold_m": 1.0,
+      "occupied_cells": 226523,
+      "free_cells": 996820,
+      "unknown_cells": 1003287,
+      "occupied_fraction": 0.101734,
+      "free_fraction": 0.447681,
+      "unknown_fraction": 0.450585,
+      "max_surface_above_ground_m": 526.53
+    }
+  },
+  "mesh_sampling": {
+    "max_grid_size": 512,
+    "sampled_rows": 512,
+    "sampled_cols": 512,
+    "terrain_vertices": 262144,
+    "terrain_faces": 261121,
+    "obstacle_vertices": 262144,
+    "obstacle_faces": 145411,
+    "obstacle_height_threshold_m": 1.0
+  },
+  "generated_files": {
+    "root_usd": "teex_scene.usd",
+    "terrain_usd": "teex_terrain.usd",
+    "obstacles_usd": "teex_obstacles.usd",
+    "texture_png": "site_rgb.png",
+    "manifest": "teex_scene_manifest.json"
+  },
+  "warnings": [
+    "dem_merged.tif contains nodata cells; filled them with 73.710 m for USD mesh continuity.",
+    "surface_merged.tif contains nodata cells; filled them with 73.710 m for USD mesh continuity."
+  ]
+}

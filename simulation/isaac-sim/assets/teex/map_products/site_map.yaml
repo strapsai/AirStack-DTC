@@ -1,0 +1,6 @@
+image: site_map.pgm
+resolution: 0.25
+origin: [753809.190, 3385305.550, 0.0]
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.196
