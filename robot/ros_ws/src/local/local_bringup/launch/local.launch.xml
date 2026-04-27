@@ -76,6 +76,7 @@
             <param name="seen_radius" value="1." />
             <param name="dt" value="0.2" />
             <param name="ht" value="7." />
+            <param name="max_velocity" value="1.0" />
             <param name="downsample_scale" value="2" />
             <param name="graph_distance_threshold" value="1." />
             <param name="graph_angle_threshold" value="30." />

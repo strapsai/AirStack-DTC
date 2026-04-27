@@ -223,7 +223,7 @@ private:
   airstack_msgs::msg::Odometry look_ahead;
   std::string look_ahead_frame;
   std::vector<TrajectoryParams> traj_params;
-  float dt, ht;
+  float dt, ht, max_velocity;
   GLuint traj_shader, collision_shader, traj_collision_shader;
   GLuint common_ubo, collision_info_ubo;
   GLuint params_ssbo, traj_ssbo, transform_ssbo;

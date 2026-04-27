@@ -19,6 +19,7 @@ GLInterface::GLInterface(rclcpp::Node *node, tf2_ros::Buffer *tf_buffer)
   seen_radius = airstack::get_param(node, "seen_radius", 1.0);
   dt = airstack::get_param(node, "dt", 0.2);
   ht = airstack::get_param(node, "ht", 10.0);
+  max_velocity = airstack::get_param(node, "max_velocity", 1.0);
   downsample_scale = airstack::get_param(node, "downsample_scale", 2);
   graph_distance_threshold = airstack::get_param(node, "graph_distance_threshold", 1.);
   graph_angle_threshold = airstack::get_param(node, "graph_angle_threshold", 30.) * M_PI / 180.;
@@ -528,10 +529,10 @@ void GLInterface::initGL(int original_width, int original_height, int downsample
       float pitch = p * M_PI / 180.f;
 
       TrajectoryParams params;
-      params.vel_desired[0] = sin(yaw);
-      params.vel_desired[1] = cos(yaw);
-      params.vel_desired[2] = sin(pitch); // 0.f;
-      params.vel_max = 2.f;
+      params.vel_desired[0] = max_velocity * cos(pitch) * sin(yaw);
+      params.vel_desired[1] = max_velocity * cos(pitch) * cos(yaw);
+      params.vel_desired[2] = max_velocity * sin(pitch);
+      params.vel_max = max_velocity;
 
       traj_params.push_back(params);
     }

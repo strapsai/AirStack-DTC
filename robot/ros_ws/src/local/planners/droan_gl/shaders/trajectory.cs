@@ -55,6 +55,10 @@ void main() {
     state.jerk += snap*dt;
     state.acc += state.jerk*dt;
     state.vel += state.acc*dt;
+    float speed = length(state.vel);
+    if(p.vel_max > 0.0 && speed > p.vel_max) {
+      state.vel = normalize(state.vel) * p.vel_max;
+    }
     state.pos += state.vel*dt;
 
     // use this to check if it should be seen because its close to the drone's position
