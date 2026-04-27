@@ -27,6 +27,10 @@
     345.7499989209464,
     402.5000966186635
   ],
+  "z_bounds_local_m": [
+    -21.290000915527344,
+    -2.3649978637695312
+  ],
   "resolution_m": [
     0.25,
     0.25
@@ -137,8 +141,9 @@
     "terrain_vertices": 262144,
     "terrain_faces": 261121,
     "obstacle_vertices": 262144,
-    "obstacle_faces": 145411,
-    "obstacle_height_threshold_m": 1.0
+    "obstacle_faces": 95059,
+    "obstacle_height_threshold_m": 1.0,
+    "max_surface_above_ground_m": 80.0
   },
   "generated_files": {
     "root_usd": "teex_scene.usd",
@@ -148,7 +153,8 @@
     "manifest": "teex_scene_manifest.json"
   },
   "warnings": [
-    "dem_merged.tif contains nodata cells; filled them with 73.710 m for USD mesh continuity.",
-    "surface_merged.tif contains nodata cells; filled them with 73.710 m for USD mesh continuity."
+    "dem_merged.tif contains nodata cells; interpolated them from neighboring valid cells for USD mesh continuity.",
+    "surface_merged.tif contains nodata cells; interpolated them from neighboring valid cells for USD mesh continuity.",
+    "surface_merged.tif contains 182 cells (0.01%) outside the plausible [-2.0, 80.0] m surface-above-ground range; clamped those cells to ground for USD obstacle generation."
   ]
 }

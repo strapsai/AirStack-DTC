@@ -45,6 +45,7 @@ class Deps:
     rasterio: Any
     Usd: Any
     UsdGeom: Any
+    UsdLux: Any
     UsdShade: Any
     Sdf: Any
     Gf: Any
@@ -63,10 +64,10 @@ def require_dependencies() -> Deps:
         missing.append("rasterio")
         rasterio = None
     try:
-        from pxr import Gf, Sdf, Usd, UsdGeom, UsdShade
+        from pxr import Gf, Sdf, Usd, UsdGeom, UsdLux, UsdShade
     except ImportError:
         missing.append("pxr (install usd-core or use Isaac Sim's Python)")
-        Gf = Sdf = Usd = UsdGeom = UsdShade = None
+        Gf = Sdf = Usd = UsdGeom = UsdLux = UsdShade = None
 
     if missing:
         raise TeexUsdError(
@@ -81,6 +82,7 @@ def require_dependencies() -> Deps:
         rasterio=rasterio,
         Usd=Usd,
         UsdGeom=UsdGeom,
+        UsdLux=UsdLux,
         UsdShade=UsdShade,
         Sdf=Sdf,
         Gf=Gf,
@@ -114,6 +116,16 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=1.0,
         help="Minimum surface-minus-DEM height used to create obstacle faces.",
+    )
+    parser.add_argument(
+        "--max-surface-above-ground-m",
+        type=float,
+        default=80.0,
+        help=(
+            "Maximum plausible surface-minus-DEM height. Larger values are "
+            "treated as LiDAR outliers and clamped to ground before obstacle "
+            "mesh generation."
+        ),
     )
     return parser.parse_args()
 
@@ -198,20 +210,66 @@ def crs_epsg(dataset: Any, label: str) -> int:
     return int(epsg)
 
 
-def read_band_filled(deps: Deps, dataset: Any, label: str, fill_value: float | None = None):
-    arr = dataset.read(1, masked=True).astype("float64")
-    if arr.mask is deps.np.ma.nomask or not deps.np.any(arr.mask):
-        return deps.np.asarray(arr), None
+def read_band_filled(deps: Deps, dataset: Any, label: str):
+    from rasterio.fill import fillnodata
 
-    valid = deps.np.asarray(arr.compressed())
+    arr = dataset.read(1, masked=True).astype("float64")
+    data = deps.np.asarray(arr.filled(deps.np.nan), dtype="float64")
+    invalid_mask = deps.np.ma.getmaskarray(arr) | ~deps.np.isfinite(data)
+    if not deps.np.any(invalid_mask):
+        return data, None
+
+    valid = data[~invalid_mask]
     if valid.size == 0:
         raise TeexUsdError(f"{label} contains no valid raster cells.")
-    fill = float(fill_value) if fill_value is not None else float(valid.min())
-    warning = (
-        f"{label} contains nodata cells; filled them with {fill:.3f} m "
-        "for USD mesh continuity."
+
+    fallback = float(valid.min())
+    seeded = data.copy()
+    seeded[invalid_mask] = fallback
+    filled = fillnodata(
+        seeded,
+        mask=(~invalid_mask).astype("uint8"),
+        max_search_distance=max(seeded.shape),
+        smoothing_iterations=1,
     )
-    return deps.np.asarray(arr.filled(fill)), warning
+    remaining_invalid = ~deps.np.isfinite(filled)
+    if deps.np.any(remaining_invalid):
+        filled[remaining_invalid] = fallback
+
+    warning = (
+        f"{label} contains nodata cells; interpolated them from neighboring "
+        "valid cells for USD mesh continuity."
+    )
+    return deps.np.asarray(filled), warning
+
+
+def clamp_surface_outliers(
+    deps: Deps,
+    surface: Any,
+    ground: Any,
+    *,
+    max_surface_above_ground_m: float,
+) -> tuple[Any, str | None]:
+    np = deps.np
+    delta = surface - ground
+    outlier_mask = (~np.isfinite(delta)) | (delta < -2.0) | (
+        delta > float(max_surface_above_ground_m)
+    )
+    outlier_count = int(np.count_nonzero(outlier_mask))
+    if outlier_count == 0:
+        return surface, None
+
+    cleaned = surface.copy()
+    cleaned[outlier_mask] = ground[outlier_mask]
+    fraction = outlier_count / int(surface.size)
+    warning = (
+        "surface_merged.tif contains "
+        f"{outlier_count} cells ({fraction:.2%}) outside the plausible "
+        f"[-2.0, {float(max_surface_above_ground_m):.1f}] m "
+        "surface-above-ground range; clamped those cells to ground for USD "
+        "obstacle generation."
+    )
+    return cleaned, warning
 
 
 def sample_indices(length: int, max_size: int, deps: Deps):
@@ -397,18 +455,24 @@ def write_terrain_usd(
     )
     st.Set(st_values)
 
-    material = deps.UsdShade.Material.Define(stage, "/Materials/SiteRgb")
-    preview = deps.UsdShade.Shader.Define(stage, "/Materials/SiteRgb/PreviewSurface")
+    material = deps.UsdShade.Material.Define(stage, "/Terrain/Looks/SiteRgb")
+    preview = deps.UsdShade.Shader.Define(
+        stage,
+        "/Terrain/Looks/SiteRgb/PreviewSurface",
+    )
     preview.CreateIdAttr("UsdPreviewSurface")
     preview.CreateInput("roughness", deps.Sdf.ValueTypeNames.Float).Set(0.85)
 
-    texture = deps.UsdShade.Shader.Define(stage, "/Materials/SiteRgb/DiffuseTexture")
+    texture = deps.UsdShade.Shader.Define(
+        stage,
+        "/Terrain/Looks/SiteRgb/DiffuseTexture",
+    )
     texture.CreateIdAttr("UsdUVTexture")
     texture.CreateInput("file", deps.Sdf.ValueTypeNames.Asset).Set(
         deps.Sdf.AssetPath(make_relative_asset_path(texture_path, output_path))
     )
 
-    st_reader = deps.UsdShade.Shader.Define(stage, "/Materials/SiteRgb/StReader")
+    st_reader = deps.UsdShade.Shader.Define(stage, "/Terrain/Looks/SiteRgb/StReader")
     st_reader.CreateIdAttr("UsdPrimvarReader_float2")
     st_reader.CreateInput("varname", deps.Sdf.ValueTypeNames.Token).Set("st")
     texture.CreateInput("st", deps.Sdf.ValueTypeNames.Float2).ConnectToSource(
@@ -444,8 +508,11 @@ def write_obstacles_usd(
     mesh.CreateSubdivisionSchemeAttr("none")
     mesh.CreateDoubleSidedAttr(True)
 
-    material = deps.UsdShade.Material.Define(stage, "/Materials/Obstacle")
-    preview = deps.UsdShade.Shader.Define(stage, "/Materials/Obstacle/PreviewSurface")
+    material = deps.UsdShade.Material.Define(stage, "/Obstacles/Looks/Obstacle")
+    preview = deps.UsdShade.Shader.Define(
+        stage,
+        "/Obstacles/Looks/Obstacle/PreviewSurface",
+    )
     preview.CreateIdAttr("UsdPreviewSurface")
     preview.CreateInput("diffuseColor", deps.Sdf.ValueTypeNames.Color3f).Set(
         deps.Gf.Vec3f(0.6, 0.55, 0.48)
@@ -465,6 +532,8 @@ def write_root_usd(
     texture_path: Path,
     manifest_path: Path,
     origin: Origin,
+    local_bounds_m: list[float],
+    z_bounds_m: tuple[float, float],
 ) -> None:
     stage = deps.Usd.Stage.CreateNew(str(output_path))
     deps.UsdGeom.SetStageUpAxis(stage, deps.UsdGeom.Tokens.z)
@@ -492,6 +561,26 @@ def write_root_usd(
         deps.Sdf.AssetPath(make_relative_asset_path(manifest_path, output_path))
     )
     teex.GetPrim().SetCustomDataByKey("description", "TEEX generated map-products scene")
+
+    min_x, min_y, max_x, max_y = local_bounds_m
+    min_z, max_z = z_bounds_m
+    width = max_x - min_x
+    height = max_y - min_y
+    center_x = min_x + width / 2.0
+    center_y = min_y + height / 2.0
+    camera_height = max_z + max(width, height) * 1.4
+
+    camera = deps.UsdGeom.Camera.Define(stage, "/World/TEEX/OverviewCamera")
+    deps.UsdGeom.XformCommonAPI(camera).SetTranslate(
+        deps.Gf.Vec3d(center_x, center_y, camera_height)
+    )
+    camera.CreateFocalLengthAttr(12.0)
+    camera.CreateClippingRangeAttr(deps.Gf.Vec2f(0.1, camera_height - min_z + 500.0))
+
+    sun = deps.UsdLux.DistantLight.Define(stage, "/World/TEEX/Sun")
+    sun.CreateIntensityAttr(600.0)
+    sun.CreateAngleAttr(0.53)
+    deps.UsdGeom.XformCommonAPI(sun).SetRotate((45.0, 0.0, 35.0))
 
     stage.GetRootLayer().Save()
 
@@ -545,14 +634,17 @@ def generate(args: argparse.Namespace) -> dict[str, Any]:
         dem, dem_warning = read_band_filled(deps, dem_src, "dem_merged.tif")
         if dem_warning:
             warnings.append(dem_warning)
-        surface, surface_warning = read_band_filled(
-            deps,
-            surface_src,
-            "surface_merged.tif",
-            fill_value=float(deps.np.nanmin(dem)),
-        )
+        surface, surface_warning = read_band_filled(deps, surface_src, "surface_merged.tif")
         if surface_warning:
             warnings.append(surface_warning)
+        surface, surface_outlier_warning = clamp_surface_outliers(
+            deps,
+            surface,
+            dem,
+            max_surface_above_ground_m=args.max_surface_above_ground_m,
+        )
+        if surface_outlier_warning:
+            warnings.append(surface_outlier_warning)
 
         terrain_points, terrain_counts, terrain_indices, st_values, sampled_rows, sampled_cols = build_grid_mesh(
             deps,
@@ -569,6 +661,17 @@ def generate(args: argparse.Namespace) -> dict[str, Any]:
             origin,
             args.max_grid_size,
             args.obstacle_height_threshold_m,
+        )
+
+        local_bounds_m = [
+            float(dem_src.bounds.left - origin.easting),
+            float(dem_src.bounds.bottom - origin.northing),
+            float(dem_src.bounds.right - origin.easting),
+            float(dem_src.bounds.top - origin.northing),
+        ]
+        z_bounds_m = (
+            float(deps.np.nanmin(dem - origin.z)),
+            float(deps.np.nanmax(dem - origin.z)),
         )
 
         manifest = {
@@ -589,12 +692,8 @@ def generate(args: argparse.Namespace) -> dict[str, Any]:
                 "frame_id": origin.frame_id,
             },
             "bounds_projected_m": bounds_list(dem_src.bounds),
-            "bounds_local_m": [
-                float(dem_src.bounds.left - origin.easting),
-                float(dem_src.bounds.bottom - origin.northing),
-                float(dem_src.bounds.right - origin.easting),
-                float(dem_src.bounds.top - origin.northing),
-            ],
+            "bounds_local_m": local_bounds_m,
+            "z_bounds_local_m": [z_bounds_m[0], z_bounds_m[1]],
             "resolution_m": [abs(float(dem_src.transform.a)), abs(float(dem_src.transform.e))],
             "raster_shape": {
                 "width_px": int(dem_src.width),
@@ -616,6 +715,7 @@ def generate(args: argparse.Namespace) -> dict[str, Any]:
                 "obstacle_vertices": int(len(obstacle_points)),
                 "obstacle_faces": int(len(obstacle_counts)),
                 "obstacle_height_threshold_m": float(args.obstacle_height_threshold_m),
+                "max_surface_above_ground_m": float(args.max_surface_above_ground_m),
             },
             "generated_files": {
                 "root_usd": root_usd.name,
@@ -647,6 +747,8 @@ def generate(args: argparse.Namespace) -> dict[str, Any]:
         texture_png,
         manifest_path,
         origin,
+        local_bounds_m,
+        z_bounds_m,
     )
     return manifest
 
