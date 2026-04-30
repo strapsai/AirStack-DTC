@@ -45,6 +45,7 @@ class Deps:
     rasterio: Any
     Usd: Any
     UsdGeom: Any
+    UsdPhysics: Any
     UsdLux: Any
     UsdShade: Any
     Sdf: Any
@@ -64,10 +65,10 @@ def require_dependencies() -> Deps:
         missing.append("rasterio")
         rasterio = None
     try:
-        from pxr import Gf, Sdf, Usd, UsdGeom, UsdLux, UsdShade
+        from pxr import Gf, Sdf, Usd, UsdGeom, UsdLux, UsdPhysics, UsdShade
     except ImportError:
         missing.append("pxr (install usd-core or use Isaac Sim's Python)")
-        Gf = Sdf = Usd = UsdGeom = UsdLux = UsdShade = None
+        Gf = Sdf = Usd = UsdGeom = UsdLux = UsdPhysics = UsdShade = None
 
     if missing:
         raise TeexUsdError(
@@ -82,6 +83,7 @@ def require_dependencies() -> Deps:
         rasterio=rasterio,
         Usd=Usd,
         UsdGeom=UsdGeom,
+        UsdPhysics=UsdPhysics,
         UsdLux=UsdLux,
         UsdShade=UsdShade,
         Sdf=Sdf,
@@ -125,6 +127,17 @@ def parse_args() -> argparse.Namespace:
             "Maximum plausible surface-minus-DEM height. Larger values are "
             "treated as LiDAR outliers and clamped to ground before obstacle "
             "mesh generation."
+        ),
+    )
+    parser.add_argument(
+        "--ground-mode",
+        choices=("flat_zero", "dem"),
+        default="flat_zero",
+        help=(
+            "Vertical model for the textured terrain. flat_zero makes the "
+            "entire satellite-image ground mesh a z=0 floor and builds "
+            "obstacles from surface-minus-DEM heights. dem preserves the old "
+            "DEM-minus-origin terrain heights."
         ),
     )
     return parser.parse_args()
@@ -300,6 +313,7 @@ def build_grid_mesh(
     transform: Any,
     origin: Origin,
     max_grid_size: int,
+    ground_mode: str,
 ):
     np = deps.np
     rows = sample_indices(elevation.shape[0], max_grid_size, deps)
@@ -309,7 +323,10 @@ def build_grid_mesh(
 
     x = easting - origin.easting
     y = northing - origin.northing
-    z = sampled - origin.z
+    if ground_mode == "flat_zero":
+        z = np.zeros_like(sampled)
+    else:
+        z = sampled - origin.z
 
     points = [
         deps.Gf.Vec3f(float(x[r, c]), float(y[r, c]), float(z[r, c]))
@@ -353,17 +370,22 @@ def build_obstacle_mesh(
     origin: Origin,
     max_grid_size: int,
     threshold_m: float,
+    ground_mode: str,
 ):
     np = deps.np
     rows = sample_indices(dem.shape[0], max_grid_size, deps)
     cols = sample_indices(dem.shape[1], max_grid_size, deps)
+    dem_sampled = dem[np.ix_(rows, cols)]
     surface_sampled = surface[np.ix_(rows, cols)]
-    delta_sampled = surface_sampled - dem[np.ix_(rows, cols)]
+    delta_sampled = surface_sampled - dem_sampled
     easting, northing = raster_xy_arrays(deps, transform, rows, cols)
 
     x = easting - origin.easting
     y = northing - origin.northing
-    z = surface_sampled - origin.z
+    if ground_mode == "flat_zero":
+        z = np.maximum(delta_sampled, 0.0)
+    else:
+        z = surface_sampled - origin.z
 
     points = [
         deps.Gf.Vec3f(float(x[r, c]), float(y[r, c]), float(z[r, c]))
@@ -427,6 +449,15 @@ def make_relative_asset_path(asset_path: Path, usd_path: Path) -> str:
     return asset_path.resolve().relative_to(usd_path.parent.resolve()).as_posix()
 
 
+def apply_mesh_collider(deps: Deps, mesh: Any) -> None:
+    prim = mesh.GetPrim()
+    if not prim.HasAPI(deps.UsdPhysics.CollisionAPI):
+        deps.UsdPhysics.CollisionAPI.Apply(prim)
+    if hasattr(deps.UsdPhysics, "MeshCollisionAPI"):
+        mesh_collision = deps.UsdPhysics.MeshCollisionAPI.Apply(prim)
+        mesh_collision.CreateApproximationAttr().Set("meshSimplification")
+
+
 def write_terrain_usd(
     deps: Deps,
     output_path: Path,
@@ -447,6 +478,7 @@ def write_terrain_usd(
     mesh.CreateFaceVertexIndicesAttr(face_indices)
     mesh.CreateSubdivisionSchemeAttr("none")
     mesh.CreateDoubleSidedAttr(True)
+    apply_mesh_collider(deps, mesh)
 
     st = deps.UsdGeom.PrimvarsAPI(mesh).CreatePrimvar(
         "st",
@@ -507,6 +539,7 @@ def write_obstacles_usd(
     mesh.CreateFaceVertexIndicesAttr(face_indices)
     mesh.CreateSubdivisionSchemeAttr("none")
     mesh.CreateDoubleSidedAttr(True)
+    apply_mesh_collider(deps, mesh)
 
     material = deps.UsdShade.Material.Define(stage, "/Obstacles/Looks/Obstacle")
     preview = deps.UsdShade.Shader.Define(
@@ -652,6 +685,7 @@ def generate(args: argparse.Namespace) -> dict[str, Any]:
             dem_src.transform,
             origin,
             args.max_grid_size,
+            args.ground_mode,
         )
         obstacle_points, obstacle_counts, obstacle_indices = build_obstacle_mesh(
             deps,
@@ -661,6 +695,7 @@ def generate(args: argparse.Namespace) -> dict[str, Any]:
             origin,
             args.max_grid_size,
             args.obstacle_height_threshold_m,
+            args.ground_mode,
         )
 
         local_bounds_m = [
@@ -669,10 +704,14 @@ def generate(args: argparse.Namespace) -> dict[str, Any]:
             float(dem_src.bounds.right - origin.easting),
             float(dem_src.bounds.top - origin.northing),
         ]
-        z_bounds_m = (
-            float(deps.np.nanmin(dem - origin.z)),
-            float(deps.np.nanmax(dem - origin.z)),
-        )
+        if args.ground_mode == "flat_zero":
+            obstacle_heights = deps.np.maximum(surface - dem, 0.0)
+            z_bounds_m = (0.0, float(deps.np.nanmax(obstacle_heights)))
+        else:
+            z_bounds_m = (
+                float(deps.np.nanmin(dem - origin.z)),
+                float(deps.np.nanmax(dem - origin.z)),
+            )
 
         manifest = {
             "source": {
@@ -690,6 +729,15 @@ def generate(args: argparse.Namespace) -> dict[str, Any]:
                 "northing": origin.northing,
                 "z_origin": origin.z,
                 "frame_id": origin.frame_id,
+            },
+            "vertical_model": {
+                "ground_mode": args.ground_mode,
+                "terrain_floor_z_m": 0.0 if args.ground_mode == "flat_zero" else None,
+                "obstacle_height_source": (
+                    "surface_merged.tif - dem_merged.tif"
+                    if args.ground_mode == "flat_zero"
+                    else "surface_merged.tif - altitude_origin"
+                ),
             },
             "bounds_projected_m": bounds_list(dem_src.bounds),
             "bounds_local_m": local_bounds_m,
@@ -716,6 +764,7 @@ def generate(args: argparse.Namespace) -> dict[str, Any]:
                 "obstacle_faces": int(len(obstacle_counts)),
                 "obstacle_height_threshold_m": float(args.obstacle_height_threshold_m),
                 "max_surface_above_ground_m": float(args.max_surface_above_ground_m),
+                "ground_mode": args.ground_mode,
             },
             "generated_files": {
                 "root_usd": root_usd.name,

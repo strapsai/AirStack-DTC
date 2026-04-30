@@ -5,6 +5,7 @@ Functions:
     get_stage_meters_per_unit   — Read stage unit scale
     scale_stage_prim            — Apply a uniform scale transform to a prim
     add_colliders               — Recursively apply CollisionAPI to all meshes
+    add_collision_box_floor     — Add an invisible static collision floor
     add_dome_light              — Add or update a dome light on the stage
     save_scene_as_contained_usd — Collect all assets into a self-contained directory
 """
@@ -13,6 +14,11 @@ import asyncio
 import omni.kit.app
 import omni.usd
 from pxr import Gf, UsdGeom, UsdPhysics, UsdLux, Sdf
+
+try:
+    from pxr import PhysxSchema
+except ImportError:
+    PhysxSchema = None
 
 
 # ---------------------------------------------------------------------------
@@ -79,9 +85,56 @@ def add_colliders(prim):
         if not prim.HasAPI(UsdPhysics.CollisionAPI):
             UsdPhysics.CollisionAPI.Apply(prim)
             print(f"[scene_prep] Added collider: {prim.GetPath()}")
+        if hasattr(UsdPhysics, "MeshCollisionAPI"):
+            mesh_collision = UsdPhysics.MeshCollisionAPI.Apply(prim)
+            mesh_collision.CreateApproximationAttr().Set("meshSimplification")
 
     for child in prim.GetChildren():
         add_colliders(child)
+
+
+def add_collision_box_floor(
+    stage,
+    prim_path: str,
+    center_xy: tuple[float, float],
+    size_xy: tuple[float, float],
+    *,
+    top_z: float = 0.0,
+    thickness: float = 0.2,
+    margin: float = 20.0,
+):
+    """Create an invisible static box collider whose top face is at *top_z*.
+
+    This gives PhysX a simple floor even when a large textured terrain mesh is
+    too complex or too thin to behave reliably as a collision surface.
+    """
+    width = max(float(size_xy[0]) + 2.0 * float(margin), 1.0)
+    depth = max(float(size_xy[1]) + 2.0 * float(margin), 1.0)
+    height = max(float(thickness), 0.01)
+    center_z = float(top_z) - height / 2.0
+
+    cube = UsdGeom.Cube.Define(stage, prim_path)
+    cube.CreateSizeAttr(1.0)
+    UsdGeom.XformCommonAPI(cube).SetTranslate(
+        Gf.Vec3d(float(center_xy[0]), float(center_xy[1]), center_z)
+    )
+    UsdGeom.XformCommonAPI(cube).SetScale(Gf.Vec3f(width, depth, height))
+
+    prim = cube.GetPrim()
+    if not prim.HasAPI(UsdPhysics.CollisionAPI):
+        UsdPhysics.CollisionAPI.Apply(prim)
+    if PhysxSchema is not None and not prim.HasAPI(PhysxSchema.PhysxCollisionAPI):
+        PhysxSchema.PhysxCollisionAPI.Apply(prim)
+
+    # Render visibility is separate from physics collision; keep the satellite
+    # imagery unobstructed while preserving the collider.
+    UsdGeom.Imageable(prim).MakeInvisible()
+    print(
+        "[scene_prep] Added invisible collision floor: "
+        f"{prim_path} center=({float(center_xy[0]):.2f}, {float(center_xy[1]):.2f}, {center_z:.2f}) "
+        f"size=({width:.2f}, {depth:.2f}, {height:.2f}) top_z={float(top_z):.2f}"
+    )
+    return prim
 
 
 # ---------------------------------------------------------------------------

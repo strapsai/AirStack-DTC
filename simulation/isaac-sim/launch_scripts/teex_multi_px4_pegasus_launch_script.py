@@ -47,7 +47,7 @@ sys.path.insert(
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "utils")
     ),
 )
-from scene_prep import add_colliders, add_dome_light
+from scene_prep import add_colliders, add_collision_box_floor, add_dome_light
 
 
 TEEX_USD_PATH = os.environ.get(
@@ -68,9 +68,13 @@ ENABLE_LIDAR = os.environ.get("ENABLE_LIDAR", "false").lower() == "true"
 SPAWN_REFERENCE = os.environ.get("TEEX_SPAWN_REFERENCE", "agl").strip().lower()
 SPAWN_ALTITUDE_M = float(os.environ.get("TEEX_SPAWN_ALTITUDE_M", "0.6"))
 HIGHLIGHT_DRONES = os.environ.get("TEEX_HIGHLIGHT_DRONES", "true").lower() == "true"
+FLATTEN_FLOOR = os.environ.get("TEEX_FLATTEN_FLOOR", "true").lower() == "true"
+ADD_PHYSICS_FLOOR = os.environ.get("TEEX_ADD_PHYSICS_FLOOR", "true").lower() == "true"
 
 STAGE_PRIM_PATH = "/World/stage"
 TEEX_PRIM_PATH = f"{STAGE_PRIM_PATH}/TEEX"
+TEEX_TERRAIN_PRIM_PATH = f"{TEEX_PRIM_PATH}/Terrain"
+TEEX_OBSTACLES_PRIM_PATH = f"{TEEX_PRIM_PATH}/Obstacles"
 
 
 ext_manager = omni.kit.app.get_app().get_extension_manager()
@@ -149,7 +153,56 @@ def wait_for_prim(stage, prim_path: str, timeout_s: float = 30.0) -> bool:
     return False
 
 
+def _mesh_points(stage, prim_path: str):
+    prim = stage.GetPrimAtPath(prim_path)
+    if not prim.IsValid() or not prim.IsA(UsdGeom.Mesh):
+        carb.log_warn(f"[teex_multi] Mesh prim not found for floor normalization: {prim_path}")
+        return None, []
+    mesh = UsdGeom.Mesh(prim)
+    points = mesh.GetPointsAttr().Get()
+    if not points:
+        carb.log_warn(f"[teex_multi] Mesh has no points for floor normalization: {prim_path}")
+        return None, []
+    return mesh, list(points)
+
+
+def normalize_floor_to_zero(stage) -> None:
+    terrain_mesh, terrain_points = _mesh_points(stage, TEEX_TERRAIN_PRIM_PATH)
+    if terrain_mesh is None:
+        return
+
+    ground_z = [float(point[2]) for point in terrain_points]
+    flat_terrain = [
+        Gf.Vec3f(float(point[0]), float(point[1]), 0.0)
+        for point in terrain_points
+    ]
+    terrain_mesh.GetPointsAttr().Set(flat_terrain)
+
+    obstacles_mesh, obstacle_points = _mesh_points(stage, TEEX_OBSTACLES_PRIM_PATH)
+    if obstacles_mesh is not None and len(obstacle_points) == len(terrain_points):
+        normalized_obstacles = [
+            Gf.Vec3f(
+                float(point[0]),
+                float(point[1]),
+                max(float(point[2]) - ground_z[index], 0.0),
+            )
+            for index, point in enumerate(obstacle_points)
+        ]
+        obstacles_mesh.GetPointsAttr().Set(normalized_obstacles)
+        carb.log_warn(
+            "[teex_multi] Normalized TEEX floor to z=0 and converted obstacles "
+            "to height above local ground."
+        )
+    elif obstacles_mesh is not None:
+        carb.log_warn(
+            "[teex_multi] Flattened terrain to z=0, but left obstacles unchanged "
+            "because obstacle/terrain point counts differ."
+        )
+
+
 def resolve_spawn_z(sampler: TerrainHeightSampler | None, x: float, y: float) -> float:
+    if FLATTEN_FLOOR and SPAWN_REFERENCE in {"agl", "above_ground", "terrain"}:
+        return SPAWN_ALTITUDE_M
     if SPAWN_REFERENCE in {"agl", "above_ground", "terrain"} and sampler is not None:
         return sampler.height_at(x, y) + SPAWN_ALTITUDE_M
     if SPAWN_REFERENCE not in {"map_z", "local_z", "z"} and sampler is None:
@@ -289,13 +342,28 @@ class PegasusApp:
         if not wait_for_prim(stage, TEEX_PRIM_PATH):
             raise RuntimeError(f"TEEX scene did not appear at {TEEX_PRIM_PATH}")
 
+        if FLATTEN_FLOOR:
+            normalize_floor_to_zero(stage)
+
         stage_prim = stage.GetPrimAtPath(STAGE_PRIM_PATH)
         add_colliders(stage_prim)
-        add_dome_light(stage)
 
         min_x, min_y, max_x, max_y = local_bounds(manifest)
         center_x = min_x + (max_x - min_x) / 2.0
         center_y = min_y + (max_y - min_y) / 2.0
+        if ADD_PHYSICS_FLOOR:
+            add_collision_box_floor(
+                stage,
+                "/World/TEEXPhysicsFloor",
+                (center_x, center_y),
+                (max_x - min_x, max_y - min_y),
+                top_z=0.0,
+            )
+            for _ in range(10):
+                omni.kit.app.get_app().update()
+
+        add_dome_light(stage)
+
         self.pg.set_viewport_camera(
             [center_x, center_y - max(max_x - min_x, max_y - min_y), 220.0],
             [center_x, center_y, 0.0],
