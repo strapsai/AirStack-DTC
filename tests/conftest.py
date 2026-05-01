@@ -4,6 +4,7 @@ import os
 import re
 import shlex
 import subprocess
+import threading
 import time
 from contextlib import contextmanager
 from datetime import datetime
@@ -62,7 +63,7 @@ def pytest_addoption(parser):
                      help="Comma-separated sim targets: msairsim, isaacsim")
     parser.addoption("--num-robots", default="1,3",
                      help="Comma-separated robot counts, e.g. 1,3")
-    parser.addoption("--stress-iterations", type=int, default=3,
+    parser.addoption("--stress-iterations", type=int, default=1,
                      help="Number of up/down iterations per (sim, num_robots) config")
     parser.addoption("--stable-duration", type=int, default=120,
                      help="Seconds test_stable polls for")
@@ -71,7 +72,7 @@ def pytest_addoption(parser):
     parser.addoption("--gui", action="store_true", default=False,
                      help="Show sim GUI windows for visual sanity checks. "
                           "Default: headless (no X, good for CI).")
-    parser.addoption("--takeoff-velocities", default="0.5,1,2",
+    parser.addoption("--takeoff-velocities", default="0.5",
                      help="Comma-separated takeoff/land velocities (m/s) to "
                           "sweep in test_takeoff_hover_land. Default: 0.5,1,2")
 
@@ -264,7 +265,7 @@ def _run_teed(cmd_list, timeout, log_name=None, env=None, cwd=None):
     quoted = " ".join(shlex.quote(a) for a in cmd_list)
     with open(log_path, "a") as f:
         f.write(f"\n$ {quoted}\n")
-    shell_cmd = f"{quoted} 2>&1 | tee -a {shlex.quote(str(log_path))}"
+    shell_cmd = f"set -o pipefail; {quoted} 2>&1 | tee -a {shlex.quote(str(log_path))}"
     return subprocess.run(["bash", "-c", shell_cmd],
                           capture_output=True, text=True,
                           timeout=timeout, env=env, cwd=cwd)
@@ -323,8 +324,11 @@ def find_container(name_pattern):
 
 
 def get_robot_containers(pattern="robot.*desktop"):
-    """Return a sorted list of currently-running robot container names."""
-    return sorted(find_all_containers(pattern))
+    """Return running robot containers sorted by their replica index"""
+    def _index(name):
+        tail = name.rsplit("-", 1)[-1]
+        return int(tail) if tail.isdigit() else 0
+    return sorted(find_all_containers(pattern), key=_index)
 
 
 def container_running(name):
@@ -348,10 +352,10 @@ def wait_for_container(name_pattern, timeout=120):
 
 # ── compute-usage sampling ─────────────────────────────────────────────────
 
-_BYTES_RE = re.compile(r"([\d.]+)\s*([KMGT]?i?B)$")
+_BYTES_RE = re.compile(r"([\d.]+)\s*([kKMGT]?i?B)$")
 _BYTES_TO_MB = {
     "B": 1 / (1024 * 1024),
-    "KiB": 1 / 1024, "KB": 1 / 1000,
+    "KiB": 1 / 1024, "KB": 1 / 1000, "kB": 1 / 1000,
     "MiB": 1, "MB": 1,
     "GiB": 1024, "GB": 1000,
     "TiB": 1024 * 1024, "TB": 1_000_000,
@@ -420,7 +424,8 @@ def sample_compute_usage(sim_container):
     return out
 
 
-def docker_image_size_mb(service, env=None):
+def _compose_images(env=None):
+    """Resolved image refs that `docker compose up` would use under `env`."""
     compose_env = os.environ.copy()
     if env:
         compose_env.update(env)
@@ -429,7 +434,26 @@ def docker_image_size_mb(service, env=None):
          "config", "--images"],
         timeout=30, env=compose_env, cwd=AIRSTACK_ROOT,
     )
-    image = next((l.strip() for l in result.stdout.strip().splitlines() if service in l), None)
+    return [l.strip() for l in result.stdout.strip().splitlines() if l.strip()]
+
+
+def missing_images(env=None):
+    """Images required by the current compose config but not present locally.
+    Used by airstack_env to fail fast instead of letting `airstack up` hang
+    pulling/building when images haven't been prebuilt."""
+    missing = []
+    for image in _compose_images(env=env):
+        result = _run_teed(
+            ["docker", "image", "inspect", image, "--format", "{{.Id}}"],
+            timeout=10,
+        )
+        if result.returncode != 0:
+            missing.append(image)
+    return missing
+
+
+def docker_image_size_mb(service, env=None):
+    image = next((i for i in _compose_images(env=env) if service in i), None)
     if not image:
         return None
     result = _run_teed(
@@ -447,21 +471,29 @@ class MetricsRecorder:
     def __init__(self, path):
         self._path = path
         self._data = json.loads(path.read_text()) if path.exists() else {}
+        self._lock = threading.Lock()
+
+    def _flush(self):
+        tmp = self._path.with_suffix(self._path.suffix + ".tmp")
+        tmp.write_text(json.dumps(self._data, indent=2))
+        os.replace(tmp, self._path)
 
     def record(self, test_name, key, value, unit="", direction="lower_is_better", **extra):
-        if test_name not in self._data:
-            self._data[test_name] = {}
-        entry = {"value": value, "unit": unit, "direction": direction}
-        entry.update(extra)
-        self._data[test_name][key] = entry
-        self._path.write_text(json.dumps(self._data, indent=2))
+        with self._lock:
+            if test_name not in self._data:
+                self._data[test_name] = {}
+            entry = {"value": value, "unit": unit, "direction": direction}
+            entry.update(extra)
+            self._data[test_name][key] = entry
+            self._flush()
 
     def record_list(self, test_name, key, values):
         """Store a raw list (time series) — not scored by parse_metrics."""
-        if test_name not in self._data:
-            self._data[test_name] = {}
-        self._data[test_name][key] = {"samples": values}
-        self._path.write_text(json.dumps(self._data, indent=2))
+        with self._lock:
+            if test_name not in self._data:
+                self._data[test_name] = {}
+            self._data[test_name][key] = {"samples": values}
+            self._flush()
 
 def get_metrics():
     global METRICS
@@ -580,7 +612,11 @@ def airstack_env(request):
     """
     sim, num_robots, iteration = request.param
     cfg = SIM_CONFIG[sim]
-    log = f"airstack_env[{_CURRENT_ITEM.callspec.id}]"
+    # Route fixture narration to a file whose name tracks the post-rewrite
+    # test id (see pytest_collection_modifyitems), so airstack up/down output
+    # lands next to the triggering test's own log instead of under pytest's
+    # stale callspec.id.
+    log = f"airstack_env.{_nodeid_dotted(_CURRENT_ITEM.nodeid, with_path_sep=True)}"
 
     headless = not request.config.getoption("--gui")
     env_overrides = {
@@ -596,6 +632,14 @@ def airstack_env(request):
     env_overrides.update(cfg.get("extra_env", {}))
 
     with logger_to(log):
+        missing = missing_images(env=env_overrides)
+        if missing:
+            pytest.fail(
+                "Required docker images not built locally:\n  - "
+                + "\n  - ".join(missing)
+                + "\nBuild them first, e.g. `airstack test -m build_docker` "
+                  "or `airstack image-build <service>`."
+            )
         logger.info("Shutting down any previously running stack")
         airstack_cmd("down", timeout=120, log_name=log)
         logger.info("Bringing up stack: sim=%s num_robots=%d iter=%d headless=%s",

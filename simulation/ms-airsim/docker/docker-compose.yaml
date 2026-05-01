@@ -8,6 +8,8 @@ services:
       dockerfile: Dockerfile
       tags:
         - *ms_airsim_image
+      cache_from:
+        - *ms_airsim_image
     container_name: ms-airsim
     entrypoint: ""
     command: /root/entrypoint.sh
@@ -27,6 +29,7 @@ services:
       - AUTOLAUNCH=${AUTOLAUNCH:-true}
       - MS_AIRSIM_BINARY_PATH=${MS_AIRSIM_BINARY_PATH:-}
       - MS_AIRSIM_HEADLESS=${MS_AIRSIM_HEADLESS:-false}
+      - MS_AIRSIM_PX4_START_DELAY=${MS_AIRSIM_PX4_START_DELAY:-3}
     deploy:
       resources:
         reservations:
