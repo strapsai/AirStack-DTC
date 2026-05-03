@@ -1,0 +1,60 @@
+{
+  "site": "teex_disaster_city",
+  "collection": "USDA/NAIP/DOQQ",
+  "bands": [
+    "R",
+    "G",
+    "B"
+  ],
+  "scale_m_native": 0.6,
+  "crs": "EPSG:32614",
+  "bbox_wgs84": [
+    -96.353439,
+    30.573372,
+    -96.349931,
+    30.57693
+  ],
+  "aligned_to_reference_dem": true,
+  "imagery_report": {
+    "path": "/home/ubuntu/dtc/airlab_ws/autonomy_ws/src/planner/dtc_multi_agent_planning/data/maps/site_rgb.tif",
+    "aligned_to_reference_dem": true,
+    "crs": "EPSG:32614",
+    "width_px": 1383,
+    "height_px": 1610,
+    "band_count": 3,
+    "resolution_m": [
+      0.25,
+      0.25
+    ],
+    "bounds_projected_m": [
+      753809.19,
+      3385305.55,
+      754154.94,
+      3385708.05
+    ],
+    "bounds_wgs84": [
+      -96.35353534,
+      30.57330175,
+      -96.34983473,
+      30.57700327
+    ],
+    "dem_overlap_fraction": 1.0,
+    "warnings": [],
+    "alignment": {
+      "reference_raster_path": "/home/ubuntu/dtc/airlab_ws/autonomy_ws/src/planner/dtc_multi_agent_planning/data/maps/dem_merged.tif",
+      "reference_crs": "EPSG:32614",
+      "reference_width_px": 1383,
+      "reference_height_px": 1610,
+      "reference_resolution_m": [
+        0.25,
+        0.25
+      ],
+      "reference_bounds_projected_m": [
+        753809.19,
+        3385305.55,
+        754154.94,
+        3385708.05
+      ]
+    }
+  }
+}

@@ -1,0 +1,118 @@
+{
+  "site": {
+    "name": "teex_disaster_city",
+    "description": "TEEX Disaster City, College Station TX",
+    "bbox": [
+      -96.353439,
+      30.573372,
+      -96.349931,
+      30.57693
+    ],
+    "utm_zone": 14,
+    "center_wgs84": [
+      -96.351685,
+      30.57515
+    ],
+    "site_area_acres": 52.0,
+    "bbox_note": "Current TEEX context window from the repo snapshot. Validate the exact operational site boundary on the VM before treating this as the final 52-acre footprint plus buffer.",
+    "utm_epsg": 32614,
+    "bbox_size_m_approx": {
+      "width_m": 336.2,
+      "height_m": 393.3,
+      "area_km2": 0.132
+    }
+  },
+  "dem": {
+    "path": "/home/ubuntu/dtc/airlab_ws/autonomy_ws/src/planner/dtc_multi_agent_planning/data/maps/dem_merged.tif",
+    "crs": "EPSG:32614",
+    "resolution_m": [
+      0.25,
+      0.25
+    ],
+    "width_px": 1383,
+    "height_px": 1610,
+    "world_width_m": 345.75,
+    "world_height_m": 402.5,
+    "bounds_projected_m": [
+      753809.19,
+      3385305.55,
+      754154.94,
+      3385708.05
+    ],
+    "bounds_wgs84": [
+      -96.35353534,
+      30.57330175,
+      -96.34983473,
+      30.57700327
+    ],
+    "nodata_fraction": 0.450585,
+    "elevation_min_m": 73.71,
+    "elevation_max_m": 92.635,
+    "elevation_range_m": 18.925
+  },
+  "occupancy": {
+    "slope_threshold_deg": 15.0,
+    "obstacle_height_threshold_m": 1.0,
+    "occupied_cells": 226523,
+    "free_cells": 996820,
+    "unknown_cells": 1003287,
+    "occupied_fraction": 0.101734,
+    "free_fraction": 0.447681,
+    "unknown_fraction": 0.450585,
+    "max_surface_above_ground_m": 526.53
+  },
+  "heightmap": {
+    "z_min_m": 73.71,
+    "z_max_m": 92.635,
+    "z_range_m": 18.925,
+    "world_width_m": 345.75,
+    "world_height_m": 402.5,
+    "image_size_px": 2049,
+    "gazebo_size_tag": "<size>345.8 402.5 18.9</size>"
+  },
+  "warnings": [
+    "Nodata fraction is high (45.1%); verify LiDAR coverage and crop bounds."
+  ],
+  "imagery": {
+    "path": "/home/ubuntu/dtc/airlab_ws/autonomy_ws/src/planner/dtc_multi_agent_planning/data/maps/site_rgb.tif",
+    "aligned_to_reference_dem": true,
+    "crs": "EPSG:32614",
+    "width_px": 1383,
+    "height_px": 1610,
+    "band_count": 3,
+    "resolution_m": [
+      0.25,
+      0.25
+    ],
+    "bounds_projected_m": [
+      753809.19,
+      3385305.55,
+      754154.94,
+      3385708.05
+    ],
+    "bounds_wgs84": [
+      -96.35353534,
+      30.57330175,
+      -96.34983473,
+      30.57700327
+    ],
+    "dem_overlap_fraction": 1.0,
+    "warnings": [],
+    "alignment": {
+      "reference_raster_path": "/home/ubuntu/dtc/airlab_ws/autonomy_ws/src/planner/dtc_multi_agent_planning/data/maps/dem_merged.tif",
+      "reference_crs": "EPSG:32614",
+      "reference_width_px": 1383,
+      "reference_height_px": 1610,
+      "reference_resolution_m": [
+        0.25,
+        0.25
+      ],
+      "reference_bounds_projected_m": [
+        753809.19,
+        3385305.55,
+        754154.94,
+        3385708.05
+      ]
+    }
+  }
+}

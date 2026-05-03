@@ -3,7 +3,12 @@ FROM osrf/ros:jazzy-desktop-full
 SHELL ["/bin/bash", "-c"]
 
 # Install system dependencies
-RUN apt-get -o Acquire::AllowInsecureRepositories=true -o Acquire::AllowDowngradeToInsecureRepositories=true update && \
+# Normalize ROS apt source to avoid Signed-By conflicts in base image variants.
+RUN rm -f /etc/apt/sources.list.d/ros2-latest.list /etc/apt/sources.list.d/ros2.list /etc/apt/sources.list.d/ros2.sources /etc/apt/sources.list.d/ros2-latest.sources && \
+    mkdir -p /usr/share/keyrings && \
+    curl -fsSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key | gpg --dearmor -o /usr/share/keyrings/ros2-latest-archive-keyring.gpg && \
+    echo "deb [signed-by=/usr/share/keyrings/ros2-latest-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu noble main" > /etc/apt/sources.list.d/ros2-latest.list && \
+    apt-get -o Acquire::AllowInsecureRepositories=true -o Acquire::AllowDowngradeToInsecureRepositories=true update && \
     apt-get -o APT::Get::AllowUnauthenticated=true install -y \
     vim nano emacs wget curl tree sshpass \
     iperf3 iftop iputils-ping net-tools htop \
