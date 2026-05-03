@@ -14,6 +14,13 @@ Env:
  - TEEX_MANIFEST_PATH: override the generated TEEX scene manifest path
  - TEEX_SPAWN_REFERENCE (default agl): agl or map_z
  - TEEX_SPAWN_ALTITUDE_M (default 0.6): spawn altitude in chosen reference
+ - TEEX_ADD_TERRAIN_COLLIDER (default auto): add an invisible DEM collider
+   when the TEEX floor is not flattened
+ - TEEX_TERRAIN_COLLIDER_MODE (default box_grid): box_grid, mesh, or both
+ - TEEX_TERRAIN_COLLIDER_GRID (default 96): max samples per collider axis
+ - TEEX_TERRAIN_BOX_GRID (default 48): box collider cells per terrain axis
+ - TEEX_TERRAIN_COLLIDER_Z_OFFSET_M (default 0.05): lift collider above visual DEM
+ - TEEX_TERRAIN_COLLIDER_THICKNESS_M (default 6.0): box-grid collider depth
 """
 
 import json
@@ -75,11 +82,29 @@ SPAWN_ALTITUDE_M = float(os.environ.get("TEEX_SPAWN_ALTITUDE_M", "0.6"))
 HIGHLIGHT_DRONES = os.environ.get("TEEX_HIGHLIGHT_DRONES", "true").lower() == "true"
 FLATTEN_FLOOR = os.environ.get("TEEX_FLATTEN_FLOOR", "true").lower() == "true"
 ADD_PHYSICS_FLOOR = os.environ.get("TEEX_ADD_PHYSICS_FLOOR", "true").lower() == "true"
+ADD_TERRAIN_COLLIDER = os.environ.get("TEEX_ADD_TERRAIN_COLLIDER", "auto").strip().lower()
+TERRAIN_COLLIDER_MODE = os.environ.get(
+    "TEEX_TERRAIN_COLLIDER_MODE",
+    "box_grid",
+).strip().lower()
+TERRAIN_COLLIDER_GRID = max(2, int(os.environ.get("TEEX_TERRAIN_COLLIDER_GRID", "96")))
+TERRAIN_BOX_GRID = max(2, int(os.environ.get("TEEX_TERRAIN_BOX_GRID", "48")))
+TERRAIN_COLLIDER_Z_OFFSET_M = float(os.environ.get("TEEX_TERRAIN_COLLIDER_Z_OFFSET_M", "0.05"))
+TERRAIN_COLLIDER_THICKNESS_M = max(
+    0.1,
+    float(os.environ.get("TEEX_TERRAIN_COLLIDER_THICKNESS_M", "6.0")),
+)
+TERRAIN_COLLIDER_APPROXIMATION = os.environ.get(
+    "TEEX_TERRAIN_COLLIDER_APPROXIMATION",
+    "none",
+).strip()
 
 STAGE_PRIM_PATH = "/World/stage"
 TEEX_PRIM_PATH = f"{STAGE_PRIM_PATH}/TEEX"
 TEEX_TERRAIN_PRIM_PATH = f"{TEEX_PRIM_PATH}/Terrain"
 TEEX_OBSTACLES_PRIM_PATH = f"{TEEX_PRIM_PATH}/Obstacles"
+TEEX_TERRAIN_COLLIDER_PRIM_PATH = f"{STAGE_PRIM_PATH}/TEEXTerrainCollider"
+TEEX_TERRAIN_BOX_COLLIDER_PRIM_PATH = "/World/TEEXTerrainCollisionGrid"
 
 
 ext_manager = omni.kit.app.get_app().get_extension_manager()
@@ -144,6 +169,243 @@ def add_collision_box_floor(
         f"{prim_path} size=({width:.2f}, {depth:.2f}, {height:.2f}) top_z={float(top_z):.2f}"
     )
     return prim
+
+
+def add_static_collider(geom, approximation: str | None = None) -> None:
+    prim = geom.GetPrim()
+    if not prim.HasAPI(UsdPhysics.CollisionAPI):
+        UsdPhysics.CollisionAPI.Apply(prim)
+    if approximation is not None and prim.IsA(UsdGeom.Mesh) and hasattr(UsdPhysics, "MeshCollisionAPI"):
+        mesh_collision = UsdPhysics.MeshCollisionAPI.Apply(prim)
+        mesh_collision.CreateApproximationAttr().Set(str(approximation))
+    if PhysxSchema is not None and not prim.HasAPI(PhysxSchema.PhysxCollisionAPI):
+        PhysxSchema.PhysxCollisionAPI.Apply(prim)
+
+
+def add_static_mesh_collider(mesh, approximation: str = "none") -> None:
+    add_static_collider(mesh, approximation)
+
+
+def should_add_terrain_collider() -> bool:
+    if ADD_TERRAIN_COLLIDER in {"1", "true", "yes", "on"}:
+        return True
+    if ADD_TERRAIN_COLLIDER in {"0", "false", "no", "off"}:
+        return False
+    if ADD_TERRAIN_COLLIDER not in {"", "auto"}:
+        carb.log_warn(
+            "[teex_multi] Unknown TEEX_ADD_TERRAIN_COLLIDER="
+            f"{ADD_TERRAIN_COLLIDER!r}; using auto."
+        )
+    return not FLATTEN_FLOOR
+
+
+def sample_axis_indices(count: int, max_samples: int) -> list[int]:
+    count = int(count)
+    max_samples = max(2, int(max_samples))
+    if count <= max_samples:
+        return list(range(max(count, 0)))
+
+    last = count - 1
+    values = {
+        int(round(last * sample / float(max_samples - 1)))
+        for sample in range(max_samples)
+    }
+    values.add(0)
+    values.add(last)
+    return sorted(values)
+
+
+def terrain_grid_from_stage(stage, manifest: dict):
+    terrain_mesh, terrain_points = _mesh_points(stage, TEEX_TERRAIN_PRIM_PATH)
+    if terrain_mesh is None:
+        return None, [], 0, 0
+
+    mesh_sampling = manifest.get("mesh_sampling", {})
+    row_count = int(mesh_sampling.get("sampled_rows", 0))
+    col_count = int(mesh_sampling.get("sampled_cols", 0))
+    if row_count <= 1 or col_count <= 1 or row_count * col_count != len(terrain_points):
+        carb.log_warn(
+            "[teex_multi] Could not derive DEM collider grid dimensions from "
+            "manifest; leaving terrain mesh collision as-is."
+        )
+        return terrain_mesh, [], 0, 0
+    return terrain_mesh, terrain_points, row_count, col_count
+
+
+def add_dem_mesh_terrain_collider(stage, manifest: dict) -> None:
+    """Add an invisible decimated terrain mesh for PhysX collision.
+
+    The generated TEEX terrain already carries USD collision metadata, but in
+    practice Pegasus drones can still tunnel through that referenced visual
+    mesh. This runtime collider is authored directly into the active stage and
+    intentionally stays invisible so the GES/TEEX visual scene is unchanged.
+    """
+    if not should_add_terrain_collider():
+        return
+
+    _terrain_mesh, terrain_points, row_count, col_count = terrain_grid_from_stage(
+        stage,
+        manifest,
+    )
+    if not terrain_points:
+        return
+
+    row_indices = sample_axis_indices(row_count, TERRAIN_COLLIDER_GRID)
+    col_indices = sample_axis_indices(col_count, TERRAIN_COLLIDER_GRID)
+    if len(row_indices) <= 1 or len(col_indices) <= 1:
+        carb.log_warn("[teex_multi] DEM collider grid is too small; skipping.")
+        return
+
+    if stage.GetPrimAtPath(TEEX_TERRAIN_COLLIDER_PRIM_PATH).IsValid():
+        stage.RemovePrim(TEEX_TERRAIN_COLLIDER_PRIM_PATH)
+
+    collider_points = []
+    for row in row_indices:
+        for col in col_indices:
+            point = terrain_points[row * col_count + col]
+            collider_points.append(
+                Gf.Vec3f(
+                    float(point[0]),
+                    float(point[1]),
+                    float(point[2]) + TERRAIN_COLLIDER_Z_OFFSET_M,
+                )
+            )
+
+    collider_col_count = len(col_indices)
+    face_counts = []
+    face_indices = []
+    for row in range(len(row_indices) - 1):
+        for col in range(len(col_indices) - 1):
+            i00 = row * collider_col_count + col
+            i01 = i00 + 1
+            i10 = (row + 1) * collider_col_count + col
+            i11 = i10 + 1
+            face_counts.append(4)
+            face_indices.extend([i00, i01, i11, i10])
+
+    collider = UsdGeom.Mesh.Define(stage, TEEX_TERRAIN_COLLIDER_PRIM_PATH)
+    collider.CreatePointsAttr(collider_points)
+    collider.CreateFaceVertexCountsAttr(face_counts)
+    collider.CreateFaceVertexIndicesAttr(face_indices)
+    collider.CreateSubdivisionSchemeAttr("none")
+    collider.CreateDoubleSidedAttr(True)
+    add_static_mesh_collider(collider, TERRAIN_COLLIDER_APPROXIMATION)
+    UsdGeom.Imageable(collider.GetPrim()).MakeInvisible()
+
+    carb.log_warn(
+        "[teex_multi] Added invisible DEM terrain collider "
+        f"{TEEX_TERRAIN_COLLIDER_PRIM_PATH} "
+        f"grid={len(col_indices)}x{len(row_indices)} "
+        f"faces={len(face_counts)} "
+        f"z_offset={TERRAIN_COLLIDER_Z_OFFSET_M:.2f} "
+        f"approximation={TERRAIN_COLLIDER_APPROXIMATION}"
+    )
+
+
+def add_dem_box_terrain_collider(stage, manifest: dict) -> None:
+    """Add an invisible terraced grid of cube colliders following the DEM."""
+    if not should_add_terrain_collider():
+        return
+
+    _terrain_mesh, terrain_points, row_count, col_count = terrain_grid_from_stage(
+        stage,
+        manifest,
+    )
+    if not terrain_points:
+        return
+
+    row_edges = sample_axis_indices(row_count, TERRAIN_BOX_GRID + 1)
+    col_edges = sample_axis_indices(col_count, TERRAIN_BOX_GRID + 1)
+    if len(row_edges) <= 1 or len(col_edges) <= 1:
+        carb.log_warn("[teex_multi] DEM box collider grid is too small; skipping.")
+        return
+
+    if stage.GetPrimAtPath(TEEX_TERRAIN_BOX_COLLIDER_PRIM_PATH).IsValid():
+        stage.RemovePrim(TEEX_TERRAIN_BOX_COLLIDER_PRIM_PATH)
+
+    UsdGeom.Xform.Define(stage, TEEX_TERRAIN_BOX_COLLIDER_PRIM_PATH)
+    box_count = 0
+    min_top_z = None
+    max_top_z = None
+
+    for row_index in range(len(row_edges) - 1):
+        r0 = row_edges[row_index]
+        r1 = row_edges[row_index + 1]
+        if r1 <= r0:
+            continue
+        for col_index in range(len(col_edges) - 1):
+            c0 = col_edges[col_index]
+            c1 = col_edges[col_index + 1]
+            if c1 <= c0:
+                continue
+
+            corners = [
+                terrain_points[r0 * col_count + c0],
+                terrain_points[r0 * col_count + c1],
+                terrain_points[r1 * col_count + c0],
+                terrain_points[r1 * col_count + c1],
+            ]
+            min_x = min(float(point[0]) for point in corners)
+            max_x = max(float(point[0]) for point in corners)
+            min_y = min(float(point[1]) for point in corners)
+            max_y = max(float(point[1]) for point in corners)
+            if max_x <= min_x or max_y <= min_y:
+                continue
+
+            top_z = max(float(point[2]) for point in corners) + TERRAIN_COLLIDER_Z_OFFSET_M
+            center_x = min_x + (max_x - min_x) / 2.0
+            center_y = min_y + (max_y - min_y) / 2.0
+            center_z = top_z - TERRAIN_COLLIDER_THICKNESS_M / 2.0
+            prim_path = (
+                f"{TEEX_TERRAIN_BOX_COLLIDER_PRIM_PATH}/"
+                f"Cell_{row_index:03d}_{col_index:03d}"
+            )
+
+            cube = UsdGeom.Cube.Define(stage, prim_path)
+            cube.CreateSizeAttr(1.0)
+            UsdGeom.XformCommonAPI(cube).SetTranslate(
+                Gf.Vec3d(center_x, center_y, center_z)
+            )
+            UsdGeom.XformCommonAPI(cube).SetScale(
+                Gf.Vec3f(max_x - min_x, max_y - min_y, TERRAIN_COLLIDER_THICKNESS_M)
+            )
+            add_static_collider(cube)
+            UsdGeom.Imageable(cube.GetPrim()).MakeInvisible()
+            box_count += 1
+            min_top_z = top_z if min_top_z is None else min(min_top_z, top_z)
+            max_top_z = top_z if max_top_z is None else max(max_top_z, top_z)
+
+    if box_count == 0:
+        carb.log_warn("[teex_multi] DEM box collider produced no boxes; skipping.")
+        return
+
+    carb.log_warn(
+        "[teex_multi] Added invisible DEM box terrain collider "
+        f"{TEEX_TERRAIN_BOX_COLLIDER_PRIM_PATH} "
+        f"grid={len(col_edges) - 1}x{len(row_edges) - 1} "
+        f"boxes={box_count} "
+        f"top_z_range=({float(min_top_z):.2f}, {float(max_top_z):.2f}) "
+        f"thickness={TERRAIN_COLLIDER_THICKNESS_M:.2f}"
+    )
+
+
+def add_dem_terrain_collider(stage, manifest: dict) -> None:
+    mode = TERRAIN_COLLIDER_MODE
+    if mode == "auto":
+        mode = "box_grid"
+    if mode in {"box", "boxes", "grid"}:
+        mode = "box_grid"
+    if mode not in {"box_grid", "mesh", "both"}:
+        carb.log_warn(
+            "[teex_multi] Unknown TEEX_TERRAIN_COLLIDER_MODE="
+            f"{TERRAIN_COLLIDER_MODE!r}; using box_grid."
+        )
+        mode = "box_grid"
+
+    if mode in {"box_grid", "both"}:
+        add_dem_box_terrain_collider(stage, manifest)
+    if mode in {"mesh", "both"}:
+        add_dem_mesh_terrain_collider(stage, manifest)
 
 
 def local_bounds(manifest: dict) -> tuple[float, float, float, float]:
@@ -386,6 +648,7 @@ class PegasusApp:
 
         if FLATTEN_FLOOR:
             normalize_floor_to_zero(stage)
+        add_dem_terrain_collider(stage, manifest)
 
         stage_prim = stage.GetPrimAtPath(STAGE_PRIM_PATH)
         add_colliders(stage_prim)

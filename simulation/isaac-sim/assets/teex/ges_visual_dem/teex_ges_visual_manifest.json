@@ -1,0 +1,41 @@
+{
+  "source": {
+    "teex_usd_dir": "/home/ubuntu/volume/home/ubuntu/dtc/airlab_ws/autonomy_ws/src/simulation/AirStack-DTC/simulation/isaac-sim/assets/teex/usd_dem",
+    "map_products_dir": "/home/ubuntu/volume/home/ubuntu/dtc/airlab_ws/autonomy_ws/src/simulation/AirStack-DTC/simulation/isaac-sim/assets/teex/map_products",
+    "ges_video": "/home/ubuntu/volume/home/ubuntu/dtc/airlab_ws/autonomy_ws/src/simulation/RESCUE-DTC/generated/renders/disaster_city.mp4",
+    "ges_json": "/home/ubuntu/volume/home/ubuntu/dtc/airlab_ws/autonomy_ws/src/simulation/RESCUE-DTC/generated/renders/disaster_city.json"
+  },
+  "origin": {
+    "easting": 753809.19,
+    "northing": 3385305.55,
+    "z_origin": 95.0,
+    "epsg": 32614
+  },
+  "settings": {
+    "colorize": "obstacles",
+    "teex_ground_mode": "dem",
+    "frame_stride": 15,
+    "max_frames": 0,
+    "max_depth_m": 600.0,
+    "fallback_color": [
+      0.62,
+      0.6,
+      0.55
+    ]
+  },
+  "layers": {
+    "obstacles": {
+      "vertices": 262144,
+      "seen_vertices": 234210,
+      "seen_fraction": 0.8934402465820312,
+      "used_frames": 65,
+      "output": "teex_obstacles_ges_color.usd"
+    }
+  },
+  "generated_files": {
+    "root_usd": "teex_scene_ges_visual.usd",
+    "terrain_usd": "teex_terrain.usd",
+    "obstacles_usd": "teex_obstacles_ges_color.usd",
+    "manifest": "teex_ges_visual_manifest.json"
+  }
+}

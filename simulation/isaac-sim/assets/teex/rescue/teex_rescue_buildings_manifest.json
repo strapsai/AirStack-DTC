@@ -1,0 +1,43 @@
+{
+  "source": {
+    "rescue_run_dir": "/home/ubuntu/volume/home/ubuntu/dtc/airlab_ws/autonomy_ws/src/simulation/RESCUE-DTC/generated/full_pipeline_runs/teex_disaster_city",
+    "rescue_mesh": "/home/ubuntu/volume/home/ubuntu/dtc/airlab_ws/autonomy_ws/src/simulation/RESCUE-DTC/generated/full_pipeline_runs/teex_disaster_city/reconstruction_mesh.glb",
+    "georeg": "/home/ubuntu/volume/home/ubuntu/dtc/airlab_ws/autonomy_ws/src/simulation/RESCUE-DTC/generated/full_pipeline_runs/teex_disaster_city/georeg.safetensors",
+    "teex_usd_dir": "/home/ubuntu/volume/home/ubuntu/dtc/airlab_ws/autonomy_ws/src/simulation/AirStack-DTC/simulation/isaac-sim/assets/teex/usd"
+  },
+  "alignment": {
+    "utm_epsg": 32614,
+    "origin_easting": 753809.19,
+    "origin_northing": 3385305.55,
+    "teex_bounds_local_m_with_margin": [
+      -1.0790536180138588e-06,
+      9.66186635196209e-05,
+      345.7499989209464,
+      402.5000966186635
+    ],
+    "rescue_floor_z_raw": 14.523432731628418,
+    "floor_percentile": 2.0,
+    "z_scale": 1.0,
+    "z_offset_m": 0.0
+  },
+  "mesh": {
+    "input_vertices": 15364514,
+    "input_faces": 30557414,
+    "clipped_vertices": 232842,
+    "clipped_faces": 436657,
+    "output_vertices": 232842,
+    "output_faces": 436657,
+    "max_faces": 500000,
+    "simplified": false,
+    "clip_face_mode": "centroid",
+    "clip_margin_m": 0.0,
+    "min_height_m": 2.5,
+    "vertex_colors": true,
+    "color_boost": 1.0
+  },
+  "generated_files": {
+    "rescue_buildings_usd": "teex_rescue_buildings.usd",
+    "root_usd": "teex_scene_rescue.usd",
+    "manifest": "teex_rescue_buildings_manifest.json"
+  }
+}
