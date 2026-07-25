@@ -1,0 +1,49 @@
+<launch>
+  <arg name="agile_autonomy_config"
+       default="$(find-pkg-share agile_autonomy_airstack)/config/agile_autonomy_airstack.yaml" />
+  <arg name="agile_odometry_topic"
+       default="/$(env ROBOT_NAME)/odometry_conversion/odometry" />
+  <arg name="agile_depth_topic"
+       default="/$(env ROBOT_NAME)/sensors/front_stereo/right/depth_ground_truth" />
+  <arg name="agile_camera_info_topic"
+       default="/$(env ROBOT_NAME)/sensors/front_stereo/right/camera_info" />
+  <arg name="agile_global_plan_topic"
+       default="/$(env ROBOT_NAME)/global_plan" />
+  <arg name="agile_trajectory_output_topic"
+       default="/$(env ROBOT_NAME)/trajectory_controller/trajectory_segment_to_add" />
+
+  <node pkg="agile_autonomy_airstack" exec="agile_safety_gate"
+        name="safety_gate" output="screen">
+    <param from="$(var agile_autonomy_config)" allow_substs="true" />
+    <remap from="odometry" to="$(var agile_odometry_topic)" />
+    <remap from="depth" to="$(var agile_depth_topic)" />
+    <remap from="external_enable" to="enable" />
+    <remap from="policy_status" to="policy/status" />
+    <remap from="adapter_status" to="adapter/status" />
+    <remap from="policy_enable" to="policy/enable" />
+    <remap from="adapter_enable" to="adapter/enable" />
+    <remap from="status" to="status" />
+  </node>
+
+  <node pkg="agile_autonomy_airstack" exec="agile_policy_node"
+        name="policy" output="screen">
+    <param from="$(var agile_autonomy_config)" allow_substs="true" />
+    <remap from="odometry" to="$(var agile_odometry_topic)" />
+    <remap from="depth" to="$(var agile_depth_topic)" />
+    <remap from="camera_info" to="$(var agile_camera_info_topic)" />
+    <remap from="global_plan" to="$(var agile_global_plan_topic)" />
+    <remap from="enable" to="policy/enable" />
+    <remap from="trajectory_candidates" to="trajectory_candidates" />
+    <remap from="status" to="policy/status" />
+  </node>
+
+  <node pkg="agile_autonomy_airstack" exec="agile_trajectory_adapter"
+        name="adapter" output="screen">
+    <param from="$(var agile_autonomy_config)" allow_substs="true" />
+    <remap from="trajectory_candidates" to="trajectory_candidates" />
+    <remap from="odometry" to="$(var agile_odometry_topic)" />
+    <remap from="enable" to="adapter/enable" />
+    <remap from="trajectory_segment" to="$(var agile_trajectory_output_topic)" />
+    <remap from="adapter_status" to="adapter/status" />
+  </node>
+</launch>

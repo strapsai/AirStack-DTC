@@ -17,7 +17,7 @@ services:
       tmux new -d -s isaac;
       if [ $$AUTOLAUNCH = 'true' ]; then
         if [ \"${ISAAC_SIM_USE_STANDALONE}\" = 'true' ]; then
-          tmux send-keys -t isaac 'run_isaac_python /isaac-sim/AirStack/simulation/isaac-sim/launch_scripts/${ISAAC_SIM_SCRIPT_NAME} --ext-folder ~/.local/share/ov/data/documents/Kit/shared/exts' ENTER
+          tmux send-keys -t isaac 'PYTHONPATH="$$ISAAC_SIM_PYTHONPATH" /isaac-sim/python.sh /isaac-sim/AirStack/simulation/isaac-sim/launch_scripts/${ISAAC_SIM_SCRIPT_NAME} --ext-folder ~/.local/share/ov/data/documents/Kit/shared/exts' ENTER
         else
           tmux send-keys -t isaac 'ros2 launch isaacsim run_isaacsim.launch.py install_path:=/isaac-sim gui:=\"${ISAAC_SIM_GUI}\" play_sim_on_start:=\"${PLAY_SIM_ON_START}\" ' ENTER
         fi
@@ -42,6 +42,23 @@ services:
       - NUM_ROBOTS=${NUM_ROBOTS:-1}
       - ENABLE_LIDAR=${ENABLE_LIDAR:-false}
       - ISAAC_SIM_HEADLESS=${ISAAC_SIM_HEADLESS:-false}
+      - ENV_USD_PATH=${ENV_USD_PATH:-}
+      - PEGASUS_DRONE_USD=${PEGASUS_DRONE_USD:-}
+      - GENERIC_ADD_COLLIDERS=${GENERIC_ADD_COLLIDERS:-true}
+      - GENERIC_ADD_DOME_LIGHT=${GENERIC_ADD_DOME_LIGHT:-true}
+      - GENERIC_STAGE_SCALE=${GENERIC_STAGE_SCALE:-1.0}
+      - GENERIC_REMOVE_EXISTING_DRONES=${GENERIC_REMOVE_EXISTING_DRONES:-true}
+      - GENERIC_EXISTING_DRONE_ROOTS=${GENERIC_EXISTING_DRONE_ROOTS:-}
+      - GENERIC_SPAWN_POSITIONS=${GENERIC_SPAWN_POSITIONS:-}
+      - GENERIC_SPAWN_X=${GENERIC_SPAWN_X:-0.0}
+      - GENERIC_SPAWN_Y=${GENERIC_SPAWN_Y:-0.0}
+      - GENERIC_SPAWN_Z=${GENERIC_SPAWN_Z:-1.0}
+      - GENERIC_SPAWN_SPACING_M=${GENERIC_SPAWN_SPACING_M:-2.0}
+      - GENERIC_CAMERA_MODE=${GENERIC_CAMERA_MODE:-starling}
+      - GENERIC_STARLING_RGB_CAMERA=${GENERIC_STARLING_RGB_CAMERA:-body/RGB_IMX412}
+      - GENERIC_STARLING_DEPTH_CAMERA=${GENERIC_STARLING_DEPTH_CAMERA:-body/ToF_sensor}
+      - GENERIC_CAMERA_OFFSET=${GENERIC_CAMERA_OFFSET:-0.2,0.0,-0.05}
+      - GENERIC_CAMERA_ROTATION_OFFSET=${GENERIC_CAMERA_ROTATION_OFFSET:-0.0,0.0,0.0}
       - TEEX_USD_PATH=${TEEX_USD_PATH:-/isaac-sim/AirStack/simulation/isaac-sim/assets/teex/usd/teex_scene.usd}
       - TEEX_MANIFEST_PATH=${TEEX_MANIFEST_PATH:-/isaac-sim/AirStack/simulation/isaac-sim/assets/teex/usd/teex_scene_manifest.json}
       - TEEX_FLATTEN_FLOOR=${TEEX_FLATTEN_FLOOR:-true}

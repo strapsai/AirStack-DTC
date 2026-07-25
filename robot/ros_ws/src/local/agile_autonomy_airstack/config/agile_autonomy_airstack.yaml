@@ -1,0 +1,36 @@
+/**:
+  ros__parameters:
+    debug: false
+
+    # Shared enable defaults. The safety gate publishes runtime enable topics.
+    enabled_default: false
+
+    # Policy/backend.
+    backend_type: mock
+    external_backend_config: ""
+    publish_rate_hz: 15.0
+    input_timeout_sec: 0.5
+    trajectory_horizon_sec: 1.0
+    trajectory_dt_sec: 0.1
+    mock_forward_speed_mps: 0.5
+    mock_speed_limit_mps: 2.0
+    frame_mode: body_relative
+    robot_name: "$(env ROBOT_NAME)"
+
+    # Adapter validation.
+    candidate_timeout_sec: 0.3
+    odom_timeout_sec: 0.3
+    max_speed_mps: 2.0
+    max_accel_mps2: 3.0
+    max_vertical_speed_mps: 1.0
+    min_points: 3
+    min_horizon_sec: 0.2
+    target_frame: map
+    candidate_frame_mode: body_relative
+    yaw_mode: current
+
+    # Safety gate.
+    require_depth: true
+    require_odom: true
+    min_policy_rate_hz: 10.0
+    fail_closed: true

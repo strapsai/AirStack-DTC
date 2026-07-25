@@ -38,4 +38,4 @@ services:
       - ../ros_ws:/root/AirStack/robot/ros_ws:rw
       # bags
       - ../bags:/bags:rw
-
+      - /home/ubuntu/volume/home/ubuntu/media/airlab-storage/chiron:/airlab-storage/chiron:ro

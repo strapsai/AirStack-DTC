@@ -11,8 +11,31 @@
     <arg name="local_depth_in_topic" default="none" />
     <arg name="local_camera_info_in_topic"
         default="/$(env ROBOT_NAME)/sensors/front_stereo/right/camera_info" />
+    <arg name="use_agile_autonomy" default="false" />
+    <arg name="agile_autonomy_config"
+        default="$(find-pkg-share agile_autonomy_airstack)/config/agile_autonomy_airstack.yaml" />
+    <arg name="agile_depth_topic"
+        default="/$(env ROBOT_NAME)/sensors/front_stereo/right/depth_ground_truth" />
+    <arg name="agile_odometry_topic"
+        default="/$(env ROBOT_NAME)/odometry_conversion/odometry" />
+    <arg name="agile_global_plan_topic"
+        default="/$(env ROBOT_NAME)/global_plan" />
+    <arg name="agile_trajectory_output_topic"
+        default="/$(env ROBOT_NAME)/trajectory_controller/trajectory_segment_to_add" />
 
     <log message="local_odometry_in_topic has $(var local_odometry_in_topic)" />
+
+    <group if="$(var use_agile_autonomy)">
+        <push-ros-namespace namespace="agile_autonomy" />
+        <include file="$(find-pkg-share agile_autonomy_airstack)/launch/agile_autonomy_airstack.launch.xml">
+            <arg name="agile_autonomy_config" value="$(var agile_autonomy_config)" />
+            <arg name="agile_odometry_topic" value="$(var agile_odometry_topic)" />
+            <arg name="agile_depth_topic" value="$(var agile_depth_topic)" />
+            <arg name="agile_camera_info_topic" value="$(var local_camera_info_in_topic)" />
+            <arg name="agile_global_plan_topic" value="$(var agile_global_plan_topic)" />
+            <arg name="agile_trajectory_output_topic" value="$(var agile_trajectory_output_topic)" />
+        </include>
+    </group>
 
 
     <!-- Takeoff/Landing Task Action Servers -->

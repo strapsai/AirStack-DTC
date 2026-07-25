@@ -1,0 +1,61 @@
+<launch>
+  <arg name="checkpoint_path" default="/airlab-storage/chiron/models/loquercio/ckpt-50"/>
+  <arg name="backend" default="tensorflow"/>
+  <arg name="tflite_path" default="/airlab-storage/chiron/models/loquercio/ckpt-50_float32.tflite"/>
+  <arg name="depth_topic" default="/$(env ROBOT_NAME)/sensors/front_stereo/right/depth_ground_truth"/>
+  <arg name="depth_reliability" default="reliable"/>
+  <arg name="odom_topic" default="/$(env ROBOT_NAME)/odometry_conversion/odometry"/>
+  <arg name="target_velocity_topic" default="/$(env ROBOT_NAME)/loquercio/target_velocity"/>
+  <arg name="goal_topic" default="/$(env ROBOT_NAME)/loquercio/goal"/>
+  <arg name="accel_topic" default="/$(env ROBOT_NAME)/loquercio/accel_cmd"/>
+  <arg name="raw_prediction_topic" default="/$(env ROBOT_NAME)/loquercio/raw_prediction"/>
+  <arg name="selected_trajectory_topic" default="/$(env ROBOT_NAME)/loquercio/selected_trajectory"/>
+  <arg name="debug_depth_topic" default="/$(env ROBOT_NAME)/loquercio/debug_depth_input"/>
+  <arg name="output_topic" default="/$(env ROBOT_NAME)/loquercio/debug_attitude_thrust"/>
+  <arg name="image_width" default="224"/>
+  <arg name="image_height" default="224"/>
+  <arg name="lookahead_step" default="4"/>
+  <arg name="default_target_speed_mps" default="2.0"/>
+  <arg name="max_net_accel_mps2" default="3.0"/>
+  <arg name="hover_thrust" default="0.5"/>
+  <arg name="thrust_min" default="0.05"/>
+  <arg name="thrust_max" default="0.55"/>
+  <arg name="max_tilt_deg" default="5.0"/>
+  <arg name="publish_stale_hover" default="false"/>
+
+  <node pkg="loquercio_px4_wrapper" exec="loquercio_policy" name="loquercio_policy" output="screen">
+    <param name="checkpoint_path" value="$(var checkpoint_path)"/>
+    <param name="backend" value="$(var backend)"/>
+    <param name="tflite_path" value="$(var tflite_path)"/>
+    <param name="depth_topic" value="$(var depth_topic)"/>
+    <param name="depth_reliability" value="$(var depth_reliability)"/>
+    <param name="odom_topic" value="$(var odom_topic)"/>
+    <param name="target_velocity_topic" value="$(var target_velocity_topic)"/>
+    <param name="goal_topic" value="$(var goal_topic)"/>
+    <param name="accel_output_topic" value="$(var accel_topic)"/>
+    <param name="raw_prediction_topic" value="$(var raw_prediction_topic)"/>
+    <param name="selected_trajectory_topic" value="$(var selected_trajectory_topic)"/>
+    <param name="debug_depth_topic" value="$(var debug_depth_topic)"/>
+    <param name="image_width" value="$(var image_width)"/>
+    <param name="image_height" value="$(var image_height)"/>
+    <param name="lookahead_step" value="$(var lookahead_step)"/>
+    <param name="default_target_speed_mps" value="$(var default_target_speed_mps)"/>
+    <param name="max_net_accel_mps2" value="$(var max_net_accel_mps2)"/>
+  </node>
+
+  <node pkg="diffphysdrone_px4_bridge" exec="diffphysdrone_attitude_bridge" name="loquercio_attitude_bridge" output="screen">
+    <param name="accel_topic" value="$(var accel_topic)"/>
+    <param name="odom_topic" value="$(var odom_topic)"/>
+    <param name="output_topic" value="$(var output_topic)"/>
+    <param name="hover_thrust" value="$(var hover_thrust)"/>
+    <param name="thrust_min" value="$(var thrust_min)"/>
+    <param name="thrust_max" value="$(var thrust_max)"/>
+    <param name="max_tilt_deg" value="$(var max_tilt_deg)"/>
+    <param name="max_net_accel_mps2" value="$(var max_net_accel_mps2)"/>
+    <param name="use_current_yaw" value="true"/>
+    <param name="yaw_ref_rad" value="0.0"/>
+    <param name="publish_rate_hz" value="50.0"/>
+    <param name="command_timeout_s" value="0.2"/>
+    <param name="publish_stale_hover" value="$(var publish_stale_hover)"/>
+  </node>
+</launch>
