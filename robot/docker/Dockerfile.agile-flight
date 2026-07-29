@@ -1,0 +1,55 @@
+# Agile Flight (Loquercio) commander image.
+#
+# Layers the commander's runtime deps ON TOP of the already-built robot x86 image
+# (AGILE_BASE_IMAGE, default the robot-x86-64 tag) — CPU TensorFlow (the Loquercio
+# net) + casadi + acados (the RPG-MPC). torch/ROS/numpy/scipy come from the base.
+# This replaces the manual per-session venv + PYTHONPATH the loquercio runbook
+# otherwise requires in the stock robot container.
+#
+# `FROM` the built robot image (not a stage of Dockerfile.robot) so the ~22 GB base
+# is reused verbatim — only these few layers build (acados compile + pip), instead
+# of rebuilding the whole robot image. Build the robot image first:
+#   ./airstack.sh image-build robot-desktop   # produces AGILE_BASE_IMAGE
+#   ./airstack.sh image-build agile-flight
+ARG AGILE_BASE_IMAGE
+FROM ${AGILE_BASE_IMAGE}
+
+SHELL ["/bin/bash", "-c"]
+
+# Build tools for the acados C library (the runtime stage strips cmake/build-essential;
+# they are also needed for in-container colcon builds of the workspace msg packages).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      git cmake build-essential \
+ && rm -rf /var/lib/apt/lists/*
+
+# acados C libraries (blasfeo / hpipm / qpOASES) — the RPG-MPC backend used by
+# svg_ground_control/agile/mpc_acados.py.
+RUN git clone --recursive --depth 1 -b v0.4.0 https://github.com/acados/acados.git /opt/acados \
+ && cmake -S /opt/acados -B /opt/acados/build -DACADOS_WITH_QPOASES=ON -DACADOS_SILENT=ON \
+ && cmake --build /opt/acados/build --target install -j4 \
+ && rm -rf /opt/acados/build
+ENV ACADOS_SOURCE_DIR=/opt/acados
+ENV LD_LIBRARY_PATH=/opt/acados/lib:${LD_LIBRARY_PATH}
+
+# Python runtime: Loquercio net (CPU TensorFlow, matching the runbook pin) + the MPC's
+# casadi and acados_template. torch is already present in the base image; numpy stays
+# ~1.26 (TensorFlow 2.16 needs numpy<2 -> compatible with the base's MACVO pin).
+#
+# NOT --ignore-installed: that clobbered the base image's carefully pinned env
+# (setuptools 79 for Jazzy/colcon, etc.). Let pip resolve normally, then restore the
+# setuptools pin that TensorFlow bumps (colcon needs <80, torch <82). vcs_versioning
+# is acados_template's setup build dependency (else metadata generation fails).
+RUN pip3 install --break-system-packages vcs_versioning \
+ && pip3 install --break-system-packages -e /opt/acados/interfaces/acados_template \
+ && pip3 install --break-system-packages casadi "tensorflow-cpu==2.16.2" \
+ && pip3 install --break-system-packages "setuptools==79.0.1"
+
+# t_renderer: acados codegen template renderer. Baked via acados_template's own
+# downloader so the version always matches the installed acados_template (no
+# hardcoded URL) and first-run codegen (the MPC warm-up in AgileVelPolicy.__init__)
+# needs no network. get_tera() prompts "download? y/N" on a missing binary — pipe 'y'
+# (no interactive stdin in a build).
+RUN printf 'y\n' | python3 -c "from acados_template.utils import get_tera; get_tera()" \
+ && test -x /opt/acados/bin/t_renderer
+
+WORKDIR /root/AirStack/robot/ros_ws

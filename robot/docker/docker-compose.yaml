@@ -56,6 +56,53 @@ services:
               capabilities: [gpu]
 
   # ===================================================================================================================
+  # Agile Flight (Loquercio) ground commander — a dedicated variant of the robot
+  # x86 image with the commander's runtime deps BAKED IN (CPU TensorFlow net +
+  # casadi/acados MPC), so it needs no manual venv/PYTHONPATH. Built by
+  # Dockerfile.agile-flight as a thin layer on the already-built robot-x86-64 image.
+  # Extends robot_base for the ros_ws + /airlab-storage/chiron (ckpt-50) mounts.
+  # CPU-only: no GPU reservation.
+  # Build:  ./airstack.sh image-build robot-desktop && ./airstack.sh image-build agile-flight
+  # Run:    ./airstack.sh up --profile agile ; ./airstack.sh connect agile-flight
+  # Fly:    ros2 launch svg_ground_control agile_velocity_single.launch.py
+  #         then ros2 service call /agile_velocity_commander/{takeoff,start,land} std_srvs/srv/Trigger
+  agile-flight:
+    profiles:
+      - agile
+    extends:
+      file: ./robot-base-docker-compose.yaml
+      service: robot_base
+    image: &agile_image ${PROJECT_DOCKER_REGISTRY}/${PROJECT_NAME}:v${VERSION}_agile-flight_${DOCKER_IMAGE_BUILD_MODE}
+    build:
+      # Thin layer FROM the already-built robot-x86-64 image (reused verbatim, no
+      # rebuild) — only acados + TF/casadi build here. Build robot-desktop first.
+      context: ./
+      dockerfile: Dockerfile.agile-flight
+      args:
+        AGILE_BASE_IMAGE: ${PROJECT_DOCKER_REGISTRY}/${PROJECT_NAME}:v${VERSION}_robot-x86-64_${DOCKER_IMAGE_BUILD_MODE}
+      tags:
+        - *agile_image
+      cache_from:
+        - *agile_image
+    environment:
+      - ROBOT_NAME_SOURCE=container_name  # see .bashrc
+      - AUTOLAUNCH=${AUTOLAUNCH:-false}
+      - ROS_DOMAIN_ID=1                   # same domain as the sim/robot interfaces
+    networks:
+      - airstack_network
+    # Idle by default (AUTOLAUNCH=false): connect and launch the commander, which
+    # then waits for the ~/takeoff|start|land Trigger services. bws/sws = build/source
+    # workspace aliases (see .bashrc).
+    command: >
+      bash -c "
+      service ssh restart;
+      tmux new -d -s agile;
+      if [ $$AUTOLAUNCH == 'true' ]; then
+        tmux send-keys -t agile 'bws && sws && ros2 launch svg_ground_control agile_velocity_single.launch.py' ENTER;
+      fi;
+      sleep infinity"
+
+  # ===================================================================================================================
   # desktop_split: simulates onboard computer on desktop for debugging the split configuration.
   # Same image as robot-desktop; role=onboard means only lite autonomy modules launch.
   # robot-offboard (below) runs concurrently on the same machine with role=offboard.

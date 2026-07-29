@@ -30,6 +30,7 @@ setup(
             'swarm_commander = svg_ground_control.swarm_commander:main',
             'diffaero_commander = svg_ground_control.diffaero_commander:main',
             'diffaero_velocity_commander = svg_ground_control.diffaero_velocity_commander:main',
+            'agile_velocity_commander = svg_ground_control.agile_velocity_commander:main',
             'mocap_bridge = svg_ground_control.mocap_bridge:main',
             'keyboard_teleop = svg_ground_control.keyboard_teleop:main',
         ],

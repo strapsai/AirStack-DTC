@@ -26,6 +26,10 @@
 
   <exec_depend>robot_interface</exec_depend>
   <exec_depend>interface_bringup</exec_depend>
+  <!-- Agile Flight (Loquercio) velocity commander reuses the net backend from
+       loquercio_px4_wrapper; the acados MPC (agile/mpc_acados.py) needs
+       acados_template + casadi in the runtime container. -->
+  <exec_depend>loquercio_px4_wrapper</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>

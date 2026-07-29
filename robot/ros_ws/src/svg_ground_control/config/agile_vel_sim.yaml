@@ -1,0 +1,85 @@
+# Agile Flight (Loquercio / agile_autonomy) velocity-command commander —
+# single-drone simulation configuration.
+#
+# Agile-Flight analog of diffaero_vel_sim.yaml. The Loquercio net outputs a
+# position trajectory; the acados MPC tracks it and the commander publishes the
+# solved MPC-state velocity as the PX4 setpoint (velocity command, not
+# attitude+thrust). See svg_ground_control/agile/agile_core.py.
+#
+# Isaac Sim: spawn with NUM_ROBOTS=1 (drone_1 spawns at x=0, offset=0).
+# MAVROS interface: ./src/svg_ground_control/scripts/launch_sim_interfaces.sh 1
+#
+# Launch:
+#   ros2 launch svg_ground_control agile_velocity_single.launch.py
+#
+# Fly:
+#   ros2 service call /agile_velocity_commander/takeoff std_srvs/srv/Trigger
+#   ros2 service call /agile_velocity_commander/start   std_srvs/srv/Trigger
+#   ros2 service call /agile_velocity_commander/land    std_srvs/srv/Trigger
+
+agile_velocity_commander:
+  ros__parameters:
+    drone_name: "drone_1"
+    drone_mode: "sim"
+
+    scenario: "hover"
+    scenario_speed_mps: 0.6
+    # Arena: region the scenario samples/clamps targets within. Contains the
+    # start (0,0) and goal with margin; sits inside the fence.
+    arena_low: [-6.0, -6.0, 0.8]
+    arena_high: [6.0, 6.0, 2.5]
+
+    # NUM_ROBOTS=1: drone_1 spawns at x=0, so offset=0 (raw odom == world frame).
+    drone_position_offset: [0.0, 0.0, 0.0]
+    hover_positions: [0.0, 0.0, 1.2]
+    goal_position: [5.0, 0.0, 1.2]
+
+    control_rate_hz: 20.0
+    hover_kp: 1.0
+    arrival_threshold_m: 0.15
+    ascend_speed_mps: 0.4
+    land_speed_mps: 0.1
+    land_complete_altitude_m: 0.15
+
+    # Fence: hard safety box (breach -> latched HOLD). Sits outside the arena.
+    fence_enabled: true
+    fence_min: [-8.0, -8.0, 0.0]
+    fence_max: [8.0, 8.0, 3.0]
+
+    # ---- Loquercio net -------------------------------------------------
+    checkpoint_path: "/airlab-storage/chiron/models/loquercio/ckpt-50"
+    backend: "tensorflow"                 # tensorflow | tflite
+    tflite_path: "/airlab-storage/chiron/models/loquercio/ckpt-50_float32.tflite"
+    image_width: 224
+    image_height: 224
+    out_seq_len: 10
+    modes: 3
+    lookahead_step: 4
+    camera_pitch_deg: 0.0
+    depth_max_m: 20.0
+
+    # Depth image the net consumes. Set to the sim's forward depth topic (the
+    # Starling ToF/stereo depth in Isaac); override to match the running stack.
+    depth_topic_template: "/{name}/sensors/front_stereo/left/depth"
+    depth_reliability: "best_effort"      # reliable | best_effort
+    depth_timeout_s: 0.5
+    depth_viz_max_dist_m: 10.0
+
+    # ---- MPC (agile/mpc_acados.py) -------------------------------------
+    # Hold a level cruise altitude (True) — the net's z is discarded, flat
+    # flight; set False to follow the net's vertical trajectory too (full 3D).
+    mpc_alt_hold: true
+    cruise_alt_m: 1.2
+    # Speed cap for the MPC reference (and the recovered velocity setpoint).
+    # Keep low for tame indoor hops; raise once behaviour is smooth.
+    max_vel: 2.0
+
+    # Yaw follows travel direction via a yaw-rate P-controller.
+    yaw_kp: 1.5
+    yaw_rate_max: 1.5
+
+    # FACE_GOAL turn-in: slew the commanded heading at this rate (rad/s).
+    face_goal_yaw_rate_max: 0.8
+
+    # Switch from the cruise policy to a stable pose-hold this far from the goal.
+    goal_arrival_threshold_m: 0.4
